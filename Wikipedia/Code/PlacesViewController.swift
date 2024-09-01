@@ -141,6 +141,11 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
         return mapListToggle
     }()
     
+    @objc
+    func reloadView() {
+        updateView()
+    }
+    
     override func viewDidLoad() {
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: WMFLocalizedString("places-filter-button-title", value: "Filter", comment: "Title for button that allows users to filter places"), style: .plain, target: self, action: #selector(filterButtonPressed(_:)))
         navigationBar.addUnderNavigationBarView(searchBarContainerView)
@@ -213,12 +218,23 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
     }
     
     override func viewWillAppear(_ animated: Bool) {
-        
         // Update saved places locations
         placeSearchService.fetchSavedArticles(searchString: nil)
-        
         super.viewWillAppear(animated)
+        if isFirstAppearance {
+            updateView()
+        }
+    }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        NotificationCenter.default.removeObserver(self, name: UIWindow.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIWindow.keyboardWillHideNotification, object: nil)
+        locationManager.stopMonitoringLocation()
+        mapView.showsUserLocation = false
+    }
+
+    func updateView() {
         if isFirstAppearance {
             isFirstAppearance = false
             if UIAccessibility.isVoiceOverRunning {
@@ -239,6 +255,8 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
         // Terrible hack to make back button text appropriate for iOS 14 - need to set the title on `WMFAppViewController`. For all app tabs, this is set in `viewWillAppear`.
         (parent as? WMFAppViewController)?.navigationItem.backButtonTitle = title
         
+        handleDeepLinking()
+
         guard locationManager.isAuthorized else {
             if !defaults.wmf_placesDidPromptForLocationAuthorization() {
                 defaults.wmf_setPlacesDidPromptForLocationAuthorization(true)
@@ -248,17 +266,13 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
             }
             return
         }
-        
         locationManager.startMonitoringLocation()
         mapView.showsUserLocation = true
     }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        NotificationCenter.default.removeObserver(self, name: UIWindow.keyboardWillShowNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: UIWindow.keyboardWillHideNotification, object: nil)
-        locationManager.stopMonitoringLocation()
-        mapView.showsUserLocation = false
+    
+    private func handleDeepLinking() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self)
+        perform(#selector(updateSearchCompletionsFromSearchBarText), with: nil, afterDelay: 0.1)
     }
 
     private func constrainButtonsToNavigationBar() {
@@ -1923,7 +1937,16 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
             let region = [location.coordinate].wmf_boundingRegion(with: dimension)
             return PlaceSearch(filter: currentSearchFilter, type: .location, origin: .user, sortStyle: .links, string: nil, region: region, localizedDescription: result.displayTitle, searchResult: result, siteURL: siteURL)
         }
-        updateSearchSuggestions(withCompletions: completions, isSearchDone: true)
+        if URLSchemeManager.shared.urlSchemeValue == nil {
+            updateSearchSuggestions(withCompletions: completions, isSearchDone: true)
+        } else {
+            guard completions.first != nil else {
+                let okAction = UIAlertAction(title: CommonStrings.okTitle, style: .default, handler: { _ in })
+                wmf_showAlert(title: "Error", message: "Could not find the location", actions: [okAction])
+                return completions
+            }
+            currentSearch = completions.first
+        }
         return completions
     }
     
@@ -1983,7 +2006,8 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
     }
     
     func updateSearchCompletionsFromSearchBarTextForTopArticles() {
-        guard let text = searchBar.text?.trimmingCharacters(in: NSCharacterSet.whitespacesAndNewlines), text != "" else {
+        let searchText: String? = URLSchemeManager.shared.urlSchemeValue ?? searchBar.text
+        guard let text = searchText?.trimmingCharacters(in: NSCharacterSet.whitespacesAndNewlines), text != "" else {
             updateSearchSuggestions(withCompletions: [], isSearchDone: false)
             self.isWaitingForSearchSuggestionUpdate = false
             return
@@ -1991,7 +2015,7 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
         let siteURL = self.siteURL
         searchFetcher.fetchArticles(forSearchTerm: text, siteURL: siteURL, resultLimit: 24, failure: { (error) in
             DispatchQueue.main.async {
-                guard text == self.searchBar.text else {
+                guard text == searchText else {
                     return
                 }
                 self.updateSearchSuggestions(withCompletions: [], isSearchDone: false)
@@ -1999,7 +2023,7 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
             }
         }) { (searchResult) in
             DispatchQueue.main.async {
-                guard text == self.searchBar.text else {
+                guard text == searchText else {
                     return
                 }
                 
@@ -2042,7 +2066,8 @@ class PlacesViewController: ViewController, UISearchBarDelegate, ArticlePopoverV
     func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
         viewMode = .search
         deselectAllAnnotations()
-        
+        URLSchemeManager.shared.urlSchemeValue = nil
+
         // Only update suggestion on *begin* editing if there is no text
         // Otherwise, it just clears perfectly good results
         if currentSearchString == "" {

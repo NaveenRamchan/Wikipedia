@@ -346,6 +346,17 @@ NSString *const WMFLanguageVariantAlertsLibraryVersion = @"WMFLanguageVariantAle
     }
 }
 
+-(void)updateTabBarIndex {
+    NSString *value = [URLSchemeManager.shared urlSchemeValue];
+    if (value != nil) {
+        self.selectedIndex = 1;
+        if (_placesViewController.isViewLoaded == true) {
+            [_placesViewController reloadView];
+        }
+        NSLog(@"Tab selected index: %@", value);
+    }
+}
+
 - (WMFRootNavigationController *)rootNavigationControllerWithRootViewController:(UIViewController *)rootViewController {
 
     WMFRootNavigationController *navigationController = [[WMFRootNavigationController alloc] initWithRootViewController:rootViewController];

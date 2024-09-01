@@ -125,6 +125,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
     private func openURLContexts(_ URLContexts: Set<UIOpenURLContext>) {
+        guard let firstURL = URLContexts.first?.url else {
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.handleIncomingURL(firstURL)
+        }
         guard let appViewController else {
             return
         }
@@ -149,6 +155,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 resumeAppIfNecessary()
             } else {
                 appViewController.hideSplashView()
+            }
+        }
+    }
+
+    private func handleIncomingURL(_ url: URL) {
+        // Check if the URL scheme matches
+        guard url.scheme == "wikipedia", url.host == "location" else {
+            print("Unhandled URL scheme or host")
+            return
+        }
+        
+        // Extract query parameters
+        if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+            let name = queryItems.first(where: { $0.name == "name" })?.value
+            if let nameString = name {
+                print("Received location: \(nameString)")
+                URLSchemeManager.shared.urlSchemeValue = nameString
+                appDelegate?.appViewController.updateTabBarIndex()
+            } else {
+                print("Invalid location parameters")
             }
         }
     }

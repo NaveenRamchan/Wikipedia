@@ -33,6 +33,8 @@ extern NSString *const WMFLanguageVariantAlertsLibraryVersion; // NSNumber
 
 - (void)applyTheme:(WMFTheme *)theme;
 
+- (void)updateTabBarIndex;
+
 - (void)showSearchInCurrentNavigationController;
 
 - (void)showImportedReadingList:(ReadingList *)readingList;
